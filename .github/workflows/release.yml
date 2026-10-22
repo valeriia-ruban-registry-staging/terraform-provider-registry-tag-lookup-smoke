@@ -1,0 +1,45 @@
+name: Create smoke release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: 0.1.0
+      PROVIDER: registry-tag-lookup-smoke
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build placeholder release metadata
+        run: |
+          mkdir -p dist/package
+          printf '#!/bin/sh\necho "Registry smoke fixture; not an installable provider" >&2\nexit 1\n' > "dist/package/terraform-provider-${PROVIDER}"
+          chmod +x "dist/package/terraform-provider-${PROVIDER}"
+          archive="terraform-provider-${PROVIDER}_${VERSION}_linux_amd64.zip"
+          (cd dist/package && zip -q "../${archive}" "terraform-provider-${PROVIDER}")
+          (cd dist && sha256sum "${archive}" > "terraform-provider-${PROVIDER}_${VERSION}_SHA256SUMS")
+          printf 'Registry smoke fixture; intentionally not a cryptographic signature.\n' > "dist/terraform-provider-${PROVIDER}_${VERSION}_SHA256SUMS.sig"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${VERSION}" >/dev/null 2>&1; then
+            echo "Release ${VERSION} already exists"
+            exit 0
+          fi
+          gh release create "${VERSION}" \
+            "dist/terraform-provider-${PROVIDER}_${VERSION}_linux_amd64.zip" \
+            "dist/terraform-provider-${PROVIDER}_${VERSION}_SHA256SUMS" \
+            "dist/terraform-provider-${PROVIDER}_${VERSION}_SHA256SUMS.sig" \
+            --title "Registry smoke fixture ${VERSION}" \
+            --notes "Disposable metadata for Oasis Registry ingestion testing. Not an installable provider."
